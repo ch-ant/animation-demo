@@ -12,6 +12,8 @@ import javax.swing.JSlider;
 import java.util.Random;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 
 
 /* 
@@ -63,7 +65,6 @@ class Vertex {
 /* A triangle has three vertices (aka "faces") */
 class Triangle {
     public ArrayList<Vertex> vertices = new ArrayList<Vertex>(Arrays.asList(null,null,null));
-
 }
 
 
@@ -326,6 +327,13 @@ public class animation extends JPanel {
     double now;
     double previousTime = 0;
 
+    /* background effect */
+    boolean useBackgroundEffect = true;
+    float effectR, effectG, effectB , effectA = 1f;
+    float leftLimit = 0 / 255f;
+    float rightLimit = 255 / 255f;
+    int effectX, effectY, effectCounter=0;
+
     // #endregion
 
     
@@ -391,15 +399,18 @@ public class animation extends JPanel {
         }
     }
 
-    int counter = 0;
+
+    /* 
+    This is where the magic happens!
+    render() is called on every animation frame. This method takes the model's
+    vertex data, its state (modelX, modelRotateY, etc), and the position of the
+    camera, and draws a 2D rendition of the 3D scene.
+    In a real game this would ideally be called 60 times per second (or more).
+    */
     public void render() {
 
         /* clear screen */
-        counter++;
-        if (counter == 100) {
-            clear(); 
-            counter=0;
-        }
+        clear(); 
 
         /* also clear depth buffer, if enabled (fill with large values) */
         if (useDepthBuffer) Arrays.fill(depthBuffer, Float.MAX_VALUE);
@@ -409,29 +420,59 @@ public class animation extends JPanel {
         and project everything to 2D triangles...
         */
         CubeModel projected = transformAndProject();
-        assertModelXYZ(projected, "after transformAndProject");
-        assertModelXYZ(model, "model");
+
+        /* uncomment to print the projected (x, y, z) coordinates */
+        //assertModelXYZ(projected, "after transformAndProject");
 
         /* ...and draw these triangles on the screen. */
         for (int i=0; i<12; i++) {
-            //draw(projected.triangles.get(i));
+            draw(projected.triangles.get(i));
 
             /* use this if you want to see the vertices, not whole triangles */
-            drawOnlyVertices(projected.triangles.get(i));
-
+            //drawOnlyVertices(projected.triangles.get(i));
         }
     }
 
 
+    /*
+    Each 3D model in the app (we only have one, the cube) is defined in its own,
+    local space (aka "model space"). In order to draw these models on the screen,
+    we have to make them undergo several "transformations":
+    
+    1. First we have to take the models and place them inside the larger 3D world. 
+        This is a transformation to "world space". 
+        
+    2. Then we position the camera and look at the world through this camera, a
+        transformation to "camera space". At this point we can already throw away
+        some triangles that are not visible (culling). 
+        
+    3. Finally, we project this 3D view onto a 2D surface so that we can show it 
+        on the screen; this projection is a transformation to "screen space" (also
+        known as "viewport space").
+
+    This is where all the math happens. To make clear what is going on, I used
+    straightfoward math -- mostly addition, multiplication, the occasional sine
+    and cosine. In a real 3D application you'd stick most of these calculations
+    inside matrices, as they are much more efficient and easy to use. But those
+    matrices will do the exact same things you see here!
+    A lot of the stuff that happens in this function would normally be done by
+    a vertex shader on the GPU. The vertex shader takes the model's vertices and
+    transforms them from local 3D space to 2D space, and all the steps inbetween.
+    */
     private CubeModel transformAndProject() {
         
         Triangle newTriangle;
         Vertex newVertex;
         double tempA, tempB;
         
+        /* 
+        We store the results in a deep copy of the cube model 
+        because we don't want to overwrite the original cube data.
+        */
         CubeModel transformed = new CubeModel(model);
 
-        assertModelXYZ(transformed, "start");
+        /* uncomment to print the (x, y, z) coordinates before any calculations */
+        //assertModelXYZ(transformed, "start");
 
         /* first, model space to world space */
         /* look at each triangle... */
@@ -488,9 +529,10 @@ public class animation extends JPanel {
             transformed.triangles.set(i, newTriangle);
         }
         
-        assertModelXYZ(transformed, "model to world");
+        /* uncomment to print the (x, y, z) world space coordinates */
+       // assertModelXYZ(transformed, "model to world");
 
-        /* world space to camera */
+        /* world space to camera space */
         for (int i=0; i<12; i++) {
             newTriangle = new Triangle();
 
@@ -509,7 +551,8 @@ public class animation extends JPanel {
             transformed.triangles.set(i, newTriangle);
         }
 
-        assertModelXYZ(transformed, "world to camera");
+        /* uncomment to print the (x, y, z) camera space coordinates */
+        //assertModelXYZ(transformed, "world to camera");
 
         /* 
         At this point you may want to throw away triangles that aren't going to
@@ -549,16 +592,43 @@ public class animation extends JPanel {
             transformed.triangles.set(i, newTriangle);
         }
 
-        assertModelXYZ(transformed, "camera to screen");
+        /* uncomment to print the (x, y, z) screen space coordinates */
+        //assertModelXYZ(transformed, "camera to screen");
 
+        /* 
+        Remember, the above stuff -- transformation to world space, camera space,
+        screen space -- is what you can do in a vertex shader. The vertex shader 
+        takes as input your model's vertices and transforms them into whatever
+        you want. You can do basic stuff like we did here (rotations, 3D-to-2D 
+        projection, etc) but anything goes (for example, turn a grid of vertices
+        into a waving flag using a bit of trig). 
+        */
+
+        /* 
+        Triangles that are further away (greater z value) need to be drawn before
+        triangles that are closer to the camera. A simple way to do this is to
+        sort the projected triangles on z-value. That's why the projected Vertex
+        values still keep track of their original z position (from camera space).
+        However, a much nicer way to do this is to use a depth buffer. 
+        */
         if (!useDepthBuffer) {
-            // TODO
+            Collections.sort(transformed.triangles, new Comparator<Triangle>() {
+                @Override
+                public int compare(Triangle t1, Triangle t2) {
+                    float avg1 = (t1.vertices.get(0).z + t1.vertices.get(1).z + t1.vertices.get(2).z) / 3;
+                    float avg2 = (t2.vertices.get(0).z + t2.vertices.get(1).z + t2.vertices.get(2).z) / 3;
+                    return Float.compare(avg1, avg2);
+                }
+            });
         }
-
         return transformed;
     }
 
 
+    /* 
+    A method that plots three pixels for each triangle. 
+    (It's useful for debugging but it doesn't really make things look very exciting...) 
+   */
     private void drawOnlyVertices(Triangle triangle) {
 
         Vertex vertex;
@@ -570,6 +640,64 @@ public class animation extends JPanel {
     }
 
 
+    /*
+    To draw the triangles we have to connect these 3 projected vertex pixels somehow.
+    This i called rasterizing. To rasterize a triangle, we'll draw horizontal strips. 
+    For example, if the triangle has these vertices,
+    
+                b
+
+
+                                c
+
+        a
+   
+   then the horizontal strips will look like this:
+   
+             =
+            ====
+           ========
+          ============
+         ========
+        ====
+
+    There is one strip for every vertical line on the screen, so strips are 1
+    pixel high. I call these "spans".
+    
+    To find out where each span starts and ends, we have to interpolate between
+    the y-positions of the three vertices to find the corresponding starting and
+    ending x-positions, represented by asterisks in the following image:
+
+             b
+            *  *
+           *      *
+          *          c
+         *      *
+        a   *
+
+    The*'s are called "edges". An edge represents an x-coordinate. Each span has
+    two edges, one on the left and one on the right. Once we've found these two
+    edges, we simply draw a horizontal line between them. Repeat this for all
+    the spans in the triangle, and we'll have filled up the triangle with pixels!
+
+    The keyword in rasterization is interpolation. We interpolate all the things!
+    As we calculate these spans and their edges, we not only interpolate the 
+    x-positions of the vertices, but also their colors, their normal vectors,
+    their z-values (for the depth buffer), their texture coordinates, and so on.
+    And when we fill up the spans from left to right we interpolate again, across
+    the surface of the triangle!
+
+    So rasterization gives us the screen coordinates of each pixel that belongs
+    to a given triangle. It also gives us an interpolated color, and this is what 
+    we write into the framebuffer. That last step, writing the color into the
+    framebuffer, is what the fragment shader does.
+    
+    Metal will do all the interpolation stuff for you, and then calls a fragment
+    shader for each pixel in the triangle. Of course, you can decide to do lots
+    of wild things to the pixel color before you write it into the framebuffer.
+    Typically, you'd apply a texture or do lighting calculations, but only your
+    imagination is the limit!
+    */
     private void draw(Triangle triangle) {
 
         /* only draw the triangle if it is at least partially inside the viewpoint */
@@ -595,12 +723,22 @@ public class animation extends JPanel {
     }
 
 
+    /* 
+    Clipping is an important feature of a rasterizer. You don't want to draw
+    pixels that are not visible anyway. We do some basic clipping in this demo
+    app but nothing fancy.
+    */
     private boolean partiallyInsideViewport(Vertex vertex) {
         return vertex.x >= 0 || vertex.x < WIDTH ||
                     vertex.y >= 0 || vertex.y < HEIGHT;
     }
 
     
+    /* 
+    In this method we interpolate from vertex1 to vertex2. We step one vertical
+    pixel at a time and calculate the x-position for each of those vertical lines.
+    We also interpolate the other vertex properties, such as their colors. 
+    */
     private void addEdge(Vertex vertex1, Vertex vertex2) {
 
         Vertex start, end;
@@ -681,7 +819,11 @@ public class animation extends JPanel {
         }
     }   
 
-
+    /* 
+    Once we have calculated all the spans for the given triangle, we can draw
+    those horizontal strips. We interpolate the x-position (step one pixel at
+    a time to the right) and also the other properties such as the color. 
+    */
     private void drawSpans() {
 
         float x, z, r, g, b, a, nx, ny, nz;
@@ -702,7 +844,7 @@ public class animation extends JPanel {
                 step = 1 / (float) (edge2.x - edge1.x);
                 pos = 0;
 
-                for (x=edge1.x; x< edge2.x; x++) {
+                for (x=edge1.x; x<edge2.x; x++) {
                     /* interpolate between the colors again */
                     r = edge1.r + (edge2.r - edge1.r) * pos;
                     g = edge1.g + (edge2.g - edge1.g) * pos;
@@ -749,14 +891,17 @@ public class animation extends JPanel {
 
                         setPixel((int) x, y, r, g, b, a);
                     }
+                    pos += step;
                 }
             }
         }
     }
 
 
+    /* Method responsible for animating the cube model*/
     private void animate() {
 
+        /* figure out how much time has elapsed */
         now = System.nanoTime();
         deltaTime = (float) (now - previousTime);
         previousTime = now;
@@ -766,6 +911,8 @@ public class animation extends JPanel {
 
         /* delta time too large */
         if (deltaTime > 1) { deltaTime = 0.1f; }
+
+        /* bounce the cube up and down */
         bounceSpeed += bounceAcceleration * deltaTime;
         modelY += bounceSpeed * deltaTime;
 
@@ -787,17 +934,74 @@ public class animation extends JPanel {
         modelRotateY += 1.5f * deltaTime;
         modelRotateZ += 0.4f * deltaTime;
 
+        /* render the scene */
         render();
+
+        /* optional background effect */
+        if (useBackgroundEffect) addBackgroundEffect();
+
+        /* and finally call repaint to display the new frame */
         repaint();
+    }
+
+
+    // TODO
+    /* Adds random squares on the background */
+    private void addBackgroundEffect() {
+
+        for(int n=0; n<50; n++) {
+
+            effectX = (int) (new Random().nextFloat() * (WIDTH));
+            effectY = (int) (new Random().nextFloat() * (HEIGHT));
+            effectR = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
+            effectG = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
+            effectB = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
+            //effectA = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
+
+            for (int i=0; i<100; i++) {
+
+                    if (effectX+i < WIDTH) {
+                        setPixel(effectX+i, effectY, effectR, effectG, effectB, effectA);
+                        setPixel(effectX+i, effectY+99, effectR, effectG, effectB, effectA);
+
+                        /*for (int offset=5; offset < 10; offset++) {
+                            setPixel(effectX+i+offset, effectY+offset, effectR, effectG, effectB, effectA);
+                            setPixel(effectX+i+offset, effectY+99+offset, effectR, effectG, effectB, effectA);
+                        }*/
+                    }
+                    if (effectY+i < HEIGHT) {
+                        setPixel(effectX, effectY+i, effectR, effectG, effectB, effectA);
+                        setPixel(effectX+99, effectY+i, effectR, effectG, effectB, effectA);
+
+                        /*for (int offset=5; offset < 10; offset++) {
+                            setPixel(effectX+offset, effectY+i+offset, effectR, effectG, effectB, effectA);
+                            setPixel(effectX+99+offset, effectY+i+offset, effectR, effectG, effectB, effectA);
+                        }*/
+                    }
+                    if (effectX-i > 0) {
+                        //setPixel(effectX-i, effectY, effectR, effectG, effectB, effectA);
+                    }
+                    if (effectY-i > 0) {
+                        //setPixel(effectX, effectY-i, effectR, effectG, effectB, effectA);
+                    }
+            }
+        }
+        
+
+        effectCounter++;
+
+        if(effectCounter > 150) {
+            effectCounter =0;
+            clear();
+            repaint();
+        }
     }
 
 
     public static void main(String[] args) {
 
         JFrame frame = new JFrame("animation demo");
-
         animation panel = new animation(WIDTH, HEIGHT);
-
         JSlider camera = new JSlider(JSlider.HORIZONTAL,
                                       1, 100, 50);
 
@@ -815,22 +1019,6 @@ public class animation extends JPanel {
         frame.setSize(WIDTH, HEIGHT);
         frame.setVisible(true);
         frame.setLocationRelativeTo(null);
-        
-        /*for (int i=0; i<12; i++) {
-            for (int j=0; j<3; j++) {
-                System.out.print((int) panel.model.triangles.get(i).vertices.get(j).x + " ");
-                System.out.print((int) panel.model.triangles.get(i).vertices.get(j).y + " ");
-                System.out.print((int) panel.model.triangles.get(i).vertices.get(j).z + "\n");
-            }
-        }*/
-
-        float r,g,b,a=1f;
-        int x,y;
-
-        float leftLimit = 0 / 255f;
-        float rightLimit = 255 / 255f;
-
-        int counter=0;;
 
 
         while(true) {
@@ -842,67 +1030,6 @@ public class animation extends JPanel {
             }
 
             panel.animate();
-            //panel.render();
-            //panel.repaint();
-
-            /*x = (int) (new Random().nextFloat() * (WIDTH));
-            y = (int) (new Random().nextFloat() * (HEIGHT));
-            r = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            g = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            b = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            //a = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-
-            /*panel.setPixel(x, y, r, g, b, a);
-            panel.setPixel(x+1, y, r, g, b, a);
-            panel.setPixel(x, y+1, r, g, b, a);
-            panel.setPixel(x+1, y+1, r, g, b, a);
-            panel.setPixel(x+2, y, r, g, b, a);
-            panel.setPixel(x+2, y+1, r, g, b, a);
-            panel.setPixel(x+2, y+2, r, g, b, a);
-            panel.setPixel(x, y+2, r, g, b, a);
-            panel.setPixel(x+1, y+2, r, g, b, a);
-            panel.setPixel(x+2, y+2, r, g, b, a);*/
-
-            /*for (int i=0; i<100; i++) {
-                if (x+i < WIDTH) {
-                    panel.setPixel(x+i, y, r, g, b, a);
-                    panel.setPixel(x+i, y+99, r, g, b, a);
-
-                    for (int offset=5; offset < 60; offset=offset+20) {
-                        panel.setPixel(x+i+offset, y+offset, r, g, b, a);
-                        panel.setPixel(x+i+offset, y+99+offset, r, g, b, a);
-                    }
-                }
-                if (y+i < HEIGHT) {
-                    panel.setPixel(x, y+i, r, g, b, a);
-                    panel.setPixel(x+99, y+i, r, g, b, a);
-
-                    for (int offset=5; offset < 60; offset=offset+10) {
-                        panel.setPixel(x+offset, y+i+offset, r, g, b, a);
-                        panel.setPixel(x+99+offset, y+i+offset, r, g, b, a);
-                    }
-                }
-                /*if (x-i > 0) {
-                    panel.setPixel(x-i, y, r, g, b, a);
-                }
-                if (y-i > 0) {
-                    panel.setPixel(x, y-i, r, g, b, a);
-                }*/
-            /*}
-            
-            panel.repaint();
-
-            counter++;
-
-            if(counter > 150) {
-                counter =0;
-                panel.clear();
-                panel.repaint();
-            }
-            
-
-            */
-        }
-        
+        }       
     }
 }
