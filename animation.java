@@ -4,16 +4,17 @@ import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.awt.Point;
-import java.awt.GridBagLayout;
+import java.awt.Toolkit;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
-import java.util.Random;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+
 
 
 /* 
@@ -33,19 +34,6 @@ class Vertex {
     public float nx=0, ny=0, nz=0;
 
     public Vertex() { }
-
-    /*public Vertex(Vertex vertex) {
-        this.x = vertex.x;
-        this.y = vertex.y;
-        this.z = vertex.z;
-        this.r = vertex.r;
-        this.g = vertex.g;
-        this.b = vertex.b;
-        this.a = vertex.a;
-        this.nx = vertex.nx;
-        this.ny = vertex.ny;
-        this.nz = vertex.nz;
-    }*/
 
     public Vertex(float x, float y, float z, float r, float g, float b, float a, float nx, float ny, float nz) {
         this.x = x;
@@ -246,8 +234,9 @@ public class animation extends JPanel {
     // #region variables
 
     /* resolution */
-    public static int WIDTH = 1280;
-    public static int HEIGHT = 960;
+    static Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+    public static int WIDTH = (int) (screenSize.getWidth() * 0.7);
+    public static int HEIGHT = (int) (screenSize.getHeight() * 0.8);
     
     private BufferedImage canvas;
     private CubeModel model;
@@ -283,9 +272,9 @@ public class animation extends JPanel {
     float modelOriginZ = 10;
 
     /* camera position */
-    float cameraX = 0;
-    float cameraY = 20;
-    float cameraZ = -20;
+    static float cameraX = 0;
+    static float cameraY = 20;
+    static float cameraZ = -20;
 
     /* ambient light */
     float ambientR = 1;
@@ -326,13 +315,6 @@ public class animation extends JPanel {
     float deltaTime;
     double now;
     double previousTime = 0;
-
-    /* background effect */
-    boolean useBackgroundEffect = true;
-    float effectR, effectG, effectB , effectA = 1f;
-    float leftLimit = 0 / 255f;
-    float rightLimit = 255 / 255f;
-    int effectX, effectY, effectCounter=0;
 
     // #endregion
 
@@ -819,6 +801,7 @@ public class animation extends JPanel {
         }
     }   
 
+
     /* 
     Once we have calculated all the spans for the given triangle, we can draw
     those horizontal strips. We interpolate the x-position (step one pixel at
@@ -863,7 +846,7 @@ public class animation extends JPanel {
 
                     if(useDepthBuffer) {
                         z = edge1.z + (edge2.z - edge1.z) * pos;
-                        offset = (int) x + y * WIDTH;
+                        offset = Math.abs((int) x + y * WIDTH);
                         if (depthBuffer[offset] > z) {
                             depthBuffer[offset] = z;
                         } else {
@@ -898,7 +881,7 @@ public class animation extends JPanel {
     }
 
 
-    /* Method responsible for animating the cube model*/
+    /* Method responsible for animating the cube model */
     private void animate() {
 
         /* figure out how much time has elapsed */
@@ -910,7 +893,7 @@ public class animation extends JPanel {
         if (deltaTime <= 0) return;
 
         /* delta time too large */
-        if (deltaTime > 1) { deltaTime = 0.1f; }
+        if (deltaTime > 1) { deltaTime = 0.015f; }
 
         /* bounce the cube up and down */
         bounceSpeed += bounceAcceleration * deltaTime;
@@ -925,106 +908,72 @@ public class animation extends JPanel {
         }
 
         /* change the scaling of the cube based on the bounce position */
-        modelScaleY = (modelY + 30) / 50;
-        modelScaleX = 1.5f - modelScaleY / 2;
+        modelScaleX = (modelY + 30) / 50;
+        modelScaleY = 1.5f - modelScaleY / 2;
         modelScaleZ = modelScaleX;
 
         /* Add some rotations, just for the fun of it. */
         //modelRotateX += 1.8f * deltaTime;
         modelRotateY += 1.5f * deltaTime;
-        modelRotateZ += 0.4f * deltaTime;
+        //modelRotateZ += 0.4f * deltaTime;
 
         /* render the scene */
         render();
-
-        /* optional background effect */
-        if (useBackgroundEffect) addBackgroundEffect();
 
         /* and finally call repaint to display the new frame */
         repaint();
     }
 
 
-    // TODO
-    /* Adds random squares on the background */
-    private void addBackgroundEffect() {
-
-        for(int n=0; n<50; n++) {
-
-            effectX = (int) (new Random().nextFloat() * (WIDTH));
-            effectY = (int) (new Random().nextFloat() * (HEIGHT));
-            effectR = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            effectG = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            effectB = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-            //effectA = leftLimit + new Random().nextFloat() * (rightLimit - leftLimit);
-
-            for (int i=0; i<100; i++) {
-
-                    if (effectX+i < WIDTH) {
-                        setPixel(effectX+i, effectY, effectR, effectG, effectB, effectA);
-                        setPixel(effectX+i, effectY+99, effectR, effectG, effectB, effectA);
-
-                        /*for (int offset=5; offset < 10; offset++) {
-                            setPixel(effectX+i+offset, effectY+offset, effectR, effectG, effectB, effectA);
-                            setPixel(effectX+i+offset, effectY+99+offset, effectR, effectG, effectB, effectA);
-                        }*/
-                    }
-                    if (effectY+i < HEIGHT) {
-                        setPixel(effectX, effectY+i, effectR, effectG, effectB, effectA);
-                        setPixel(effectX+99, effectY+i, effectR, effectG, effectB, effectA);
-
-                        /*for (int offset=5; offset < 10; offset++) {
-                            setPixel(effectX+offset, effectY+i+offset, effectR, effectG, effectB, effectA);
-                            setPixel(effectX+99+offset, effectY+i+offset, effectR, effectG, effectB, effectA);
-                        }*/
-                    }
-                    if (effectX-i > 0) {
-                        //setPixel(effectX-i, effectY, effectR, effectG, effectB, effectA);
-                    }
-                    if (effectY-i > 0) {
-                        //setPixel(effectX, effectY-i, effectR, effectG, effectB, effectA);
-                    }
-            }
-        }
-        
-
-        effectCounter++;
-
-        if(effectCounter > 150) {
-            effectCounter =0;
-            clear();
-            repaint();
-        }
-    }
-
-
-    public static void main(String[] args) {
+    /* Init method for the frame, panel and camera */
+    private static animation init() {
 
         JFrame frame = new JFrame("animation demo");
         animation panel = new animation(WIDTH, HEIGHT);
-        JSlider camera = new JSlider(JSlider.HORIZONTAL,
-                                      1, 100, 50);
+        BorderLayout layout = new BorderLayout();
+        JSlider camera = new JSlider(JSlider.HORIZONTAL, -15, 15, 0);
 
-        panel.setMaximumSize(new Dimension(1500, 1500));
-        camera.setMaximumSize(new Dimension(1, 1));
+        camera.setBackground(new Color(0, 0, 0, 0));
+        camera.setPreferredSize(new Dimension(300,30));
+
+        camera.addChangeListener(new ChangeListener() 
+       {
+
+        @Override
+        public void stateChanged(ChangeEvent event) 
+        {
+            int value = camera.getValue();
+            cameraX = (float) (value * 2);
+        }
+       });
+       
+        panel.add(camera, BorderLayout.SOUTH);
 
         frame.setTitle("Animation Demo");
-        frame.setLocation(new Point(100, 100));
-        frame.getContentPane().add(panel);
-        //frame.getContentPane().add(camera);
-        //frame.setLayout(new GridBagLayout());
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        
+        frame.setLayout(layout);
+        frame.getContentPane().add(panel, BorderLayout.CENTER);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);      
         frame.pack();
         frame.setSize(WIDTH, HEIGHT);
         frame.setVisible(true);
         frame.setLocationRelativeTo(null);
 
+        return panel;
+    }
+
+
+
+
+    public static void main(String[] args) {
+
+
+        animation panel = init();
+
 
         while(true) {
 
             try {
-                Thread.sleep(12);
+                Thread.sleep(0);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
