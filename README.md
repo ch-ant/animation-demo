@@ -2,9 +2,8 @@
 
 <center>
 
-![](https://s9.gifyu.com/images/cube.gif)
-<!--<img alt="demo gif here"  src="https://s9.gifyu.com/images/cube.gif" width="215" height="175" />-->
-<br>
+<img alt="demo gif here"  src="https://s9.gifyu.com/images/cube.gif" width="215" height="175" />
+<br><br>
 
 #### DISCLAIMER
 
