@@ -1,6 +1,5 @@
 # Animation Demo
 
-<center>
 
 <img alt="demo gif here"  src="https://s9.gifyu.com/images/cube.gif" width="215" height="175" />
 <br><br>
@@ -33,5 +32,3 @@ movement.
 #### LANGUAGE
 
 Java 14.0.2
-
-</center>
